@@ -19,6 +19,7 @@ when CLIENT_ACCEPTED {
   set retries 0
   set serverNeeded 0
   set retryBasedOnAffinity 0
+  set retryBypassAuthTarget 0
   set retryOriginalForAuthChallenge 0
   set serverSelected $static::UNKNOWN
   set newDest $static::UNKNOWN
@@ -103,7 +104,7 @@ when HTTP_REQUEST {
 
   set DomAuthTargetCookieExists [HTTP::cookie exists "DomAuthTarget"]
   call logger "REQ" $requestedURI "DomAuthTargetCookieExists: $DomAuthTargetCookieExists"
-  if { ($DomAuthTargetCookieExists eq 1) } {
+  if { ($DomAuthTargetCookieExists eq 1) and ($retryBypassAuthTarget eq 0) } {
     ##### 1.a We are in the middle of authenticating against a Domino server.
     call logger "REQ" $requestedURI "Request IS part of authentication flow: [HTTP::cookie value "DomAuthTarget"]"
     # Domino authentication must start and end on the same Domino server.
@@ -121,6 +122,7 @@ when HTTP_REQUEST {
     call logger "REQ" $requestedURI "using pool: $authPool"
     set targetPool $authPool
   } else {
+    set retryBypassAuthTarget 0
     ##### 1.b We are NOT in the middle of authentication against a Domino server
     call logger "REQ" $requestedURI "Request is NOT part of authentication flow"
     if { ([string tolower [HTTP::uri]] contains "/serverslookup") } {
@@ -274,7 +276,8 @@ when HTTP_RESPONSE {
 
   if { ([HTTP::status] == 404) and ($retries < 8) } {
     incr retries
-    if { ($affinityCookieExists eq 1) and ($retries eq 1) } {
+    set retryBypassAuthTarget 1
+    if { [info exists affinityCookieExists] and ($retries eq 1) } {
       # User is logged in and refreshed the page
       # First retry based on last known affinity
       set retryBasedOnAffinity 1
